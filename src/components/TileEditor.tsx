@@ -76,7 +76,11 @@ export function TileEditor({
     toast.success("Note saved.");
     onNotesChanged();
     void speak("Note saved.").then((r) => {
-      if (r.ok) void new Audio(URL.createObjectURL(r.audio)).play().catch(() => {});
+      if (!r.ok) return;
+      const url = URL.createObjectURL(r.audio);
+      const audio = new Audio(url);
+      audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+      void audio.play().catch(() => URL.revokeObjectURL(url));
     });
   }
 

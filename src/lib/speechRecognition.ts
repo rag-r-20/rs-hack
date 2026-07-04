@@ -63,3 +63,12 @@ export function transcriptHasWakeNote(text: string): boolean {
   if (transcriptHasEndNote(text)) return false;
   return /\bnote\b/i.test(text);
 }
+
+/** Remove hands-free wake/stop phrases before sending audio transcripts to the LLM. */
+export function stripWakePhrases(text: string): string {
+  return text
+    .replace(/\bend\s+note\b/gi, "")
+    .replace(/\bnote\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}

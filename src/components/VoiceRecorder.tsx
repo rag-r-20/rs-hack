@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useHandsFreeVoice } from "../hooks/useHandsFreeVoice";
 import { Spinner } from "./ui/Spinner";
 import { useToast } from "./ui/Toast";
 
@@ -7,20 +6,20 @@ interface Props {
   onRecorded: (blob: Blob) => void;
   /** Parent is processing the last recording (transcribe/clean) — lock the button. */
   busy?: boolean;
+  /** Lock mic while another capture mode (e.g. hands-free) owns the stream. */
+  disabled?: boolean;
   /** Status line shown under the button while busy (e.g. "Transcribing…"). */
   busyLabel?: string;
   idleLabel?: string;
-  /** Show the hands-free "note / end note" listen toggle. */
-  handsFree?: boolean;
 }
 
-/** Tap-to-record mic capture, plus optional hands-free mode (say "note" / "end note"). */
+/** Tap-to-record mic capture. Requires a user gesture (iOS rule) — the button is it. */
 export function VoiceRecorder({
   onRecorded,
   busy = false,
+  disabled = false,
   busyLabel,
   idleLabel = "Hold to note — tap to record",
-  handsFree = true,
 }: Props) {
   const toast = useToast();
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -28,12 +27,6 @@ export function VoiceRecorder({
   const streamRef = useRef<MediaStream | null>(null);
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
-
-  const handsFreeVoice = useHandsFreeVoice({
-    onRecorded,
-    disabled: busy || recording,
-    onError: (message) => toast.error(message),
-  });
 
   useEffect(() => {
     if (!recording) return;
@@ -53,7 +46,7 @@ export function VoiceRecorder({
   }, []);
 
   async function start() {
-    if (handsFreeVoice.armed) handsFreeVoice.disarm();
+    if (disabled) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -84,15 +77,8 @@ export function VoiceRecorder({
     setRecording(false);
   }
 
-  const handsFreeStatus =
-    handsFreeVoice.phase === "armed"
-      ? "Listening — say “note” to start"
-      : handsFreeVoice.phase === "recording"
-        ? `Recording… ${handsFreeVoice.seconds}s — say “end note” when done`
-        : null;
-
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className="flex flex-col items-center gap-2">
       {busy ? (
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-zinc-100 text-blue-700">
           <Spinner size={26} />
@@ -100,8 +86,8 @@ export function VoiceRecorder({
       ) : (
         <button
           onClick={recording ? stop : start}
-          disabled={handsFreeVoice.phase === "recording"}
-          className={`flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition-colors disabled:opacity-50 ${
+          disabled={disabled}
+          className={`flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
             recording
               ? "bg-red-600 hover:bg-red-700"
               : "bg-blue-700 hover:bg-blue-800"
@@ -115,42 +101,13 @@ export function VoiceRecorder({
           )}
         </button>
       )}
-
-      <p className="text-center text-sm text-zinc-500">
+      <p className="text-sm text-zinc-500">
         {busy
           ? busyLabel ?? "Working…"
           : recording
             ? `Recording… ${seconds}s — tap to stop`
-            : handsFreeStatus ?? idleLabel}
+            : idleLabel}
       </p>
-
-      {handsFree && handsFreeVoice.supported && !busy && (
-        <div className="flex w-full flex-col items-center gap-2 border-t border-zinc-200 pt-3">
-          <button
-            type="button"
-            onClick={handsFreeVoice.toggle}
-            disabled={recording}
-            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-              handsFreeVoice.armed
-                ? "bg-emerald-100 text-emerald-800 ring-2 ring-emerald-400"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-            }`}
-          >
-            {handsFreeVoice.armed ? "Hands-free on" : "Hands-free mode"}
-          </button>
-          <p className="text-center text-xs text-zinc-400">
-            {handsFreeVoice.armed
-              ? "Say “note”, speak your note, then “end note”. Tap above to turn off."
-              : "One tap — then say “note” to record and “end note” to finish."}
-          </p>
-        </div>
-      )}
-
-      {handsFree && !handsFreeVoice.supported && (
-        <p className="text-center text-xs text-zinc-400">
-          Hands-free mode needs Chrome or Edge. Tap the mic to record.
-        </p>
-      )}
     </div>
   );
 }

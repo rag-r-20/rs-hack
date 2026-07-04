@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:diagram": "tsx scripts/test-diagram.ts",
     "test:llm": "tsx scripts/test-llm.ts",
+    "test:board-voice": "tsx scripts/test-board-voice.ts",
     "test:gradium": "tsx scripts/test-gradium.ts"
   },
   "dependencies": {

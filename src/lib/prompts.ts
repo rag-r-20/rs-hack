@@ -27,6 +27,36 @@ Order strictly by physical position (row then col). rows × cols should cover al
 modules. If unsure of type, use "other" with low confidence. Never fabricate
 ratings or labels.`;
 
+/** Text description → panel JSON (same shape as vision parse, no image). */
+export function descriptionParsePrompt(description: string): string {
+  return `You are an assistant for electricians. The user described a domestic consumer
+unit / distribution board in plain English. Infer ONLY what they stated. Do NOT
+invent wiring, circuits served, or labels they did not mention. Return STRICT JSON
+only, no prose.
+
+{
+  "panel": {
+    "ways": <int total module positions if stated or inferable, else null>,
+    "rows": <int physical horizontal TIERS — typically 1 or 2. This is NOT the way count.>,
+    "cols": <int modules per row in the widest tier>
+  },
+  "components": [
+    { "id": "c1",
+      "order": <int, left-to-right then top-to-bottom, starting at 1>,
+      "row": <int 1-based tier, top row = 1>,
+      "col": <int 1-based column within that row, left = 1>,
+      "type": "main_switch | RCD | RCBO | MCB | blank | other",
+      "rating": "<e.g. 32A, B16, 63A; null if not stated>",
+      "printed_label": "<purpose label if stated; null if none>",
+      "confidence": <0.0-1.0 — lower when inferred from vague wording> }
+  ]
+}
+Order strictly by physical position (row then col). If unsure of type, use "other"
+with low confidence. Never fabricate ratings or labels.
+
+DESCRIPTION: ${description}`;
+}
+
 /** Prompt 2: voice note → clean note (one tile). */
 export function cleanNotePrompt(
   existingLabel: string | null,

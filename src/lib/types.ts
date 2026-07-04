@@ -128,6 +128,11 @@ export interface Panel {
   id: string;
   jobId: string;
   sourcePhotoId?: string;
+  /** User-facing circuit name, e.g. "Garage sub-board". */
+  label?: string;
+  /** Plain-text description when the board was created without a photo. */
+  sourceDescription?: string;
+  sourceType?: 'photo' | 'description';
   components: PanelComponent[];
   /** Physical rows on the board (from the vision parse); absent = 1. */
   rows?: number;

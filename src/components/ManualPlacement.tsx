@@ -23,14 +23,21 @@ interface Draft {
 }
 
 interface Props {
-  photoUrl: string;
+  photoUrl?: string;
   reason: string | null;
   onCancel: () => void;
   onConfirm: (components: PanelComponent[]) => Promise<void> | void;
+  cancelLabel?: string;
 }
 
 /** Safety net when the vision parse fails: build tiles by hand over the photo. */
-export function ManualPlacement({ photoUrl, reason, onCancel, onConfirm }: Props) {
+export function ManualPlacement({
+  photoUrl,
+  reason,
+  onCancel,
+  onConfirm,
+  cancelLabel = "Retake photo",
+}: Props) {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -88,11 +95,17 @@ export function ManualPlacement({ photoUrl, reason, onCancel, onConfirm }: Props
         </Card>
 
         <div className="mb-4 overflow-hidden rounded-2xl bg-zinc-900">
-          <img
-            src={photoUrl}
-            alt="Board"
-            className="mx-auto max-h-64 w-auto object-contain"
-          />
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt="Board"
+              className="mx-auto max-h-64 w-auto object-contain"
+            />
+          ) : (
+            <p className="px-4 py-8 text-center text-sm text-zinc-400">
+              No photo — add breakers in order below.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-3">
@@ -158,7 +171,7 @@ export function ManualPlacement({ photoUrl, reason, onCancel, onConfirm }: Props
 
       <div className="safe-bottom sticky bottom-0 flex gap-3 border-t border-zinc-200 bg-white p-4">
         <Button variant="ghost" size="lg" onClick={onCancel}>
-          Retake photo
+          {cancelLabel}
         </Button>
         <Button
           size="lg"

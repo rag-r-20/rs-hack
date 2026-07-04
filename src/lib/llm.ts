@@ -20,6 +20,7 @@ import {
   askJobPrompt,
   boardVoicePrompt,
   cleanNotePrompt,
+  descriptionParsePrompt,
   materialsPrompt,
 } from "./prompts";
 import type {
@@ -328,6 +329,28 @@ export async function visionParse(
     const normalized = normalizeVisionParse(result.value);
     if (!normalized) {
       return { ok: false, error: "Vision JSON did not match expected shape", raw };
+    }
+    return { ok: true, value: normalized };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Plain-text board description → panel JSON (same shape as vision parse). */
+export async function descriptionParse(
+  description: string,
+  opts?: { provider?: TextProvider },
+): Promise<Result<VisionParse>> {
+  try {
+    const raw = await textComplete(descriptionParsePrompt(description), {
+      provider: opts?.provider,
+      json: true,
+    });
+    const result = extractJson<unknown>(raw);
+    if (!result.ok) return result;
+    const normalized = normalizeVisionParse(result.value);
+    if (!normalized) {
+      return { ok: false, error: "Description JSON did not match expected shape", raw };
     }
     return { ok: true, value: normalized };
   } catch (err) {

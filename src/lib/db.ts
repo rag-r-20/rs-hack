@@ -22,6 +22,8 @@ import type {
 export interface StoredPhoto {
   id: string;
   blob: Blob;
+  jobId?: string;
+  label?: string;
   createdAt: number;
 }
 
@@ -43,6 +45,10 @@ class ReadBackDB extends Dexie {
     // v2: add a photos table for the captured source images (UI/before-after).
     this.version(2).stores({
       photos: 'id, createdAt',
+    });
+    // v3: job-scoped property photos (gallery, not tied to a panel render).
+    this.version(3).stores({
+      photos: 'id, jobId, createdAt',
     });
   }
 }
@@ -95,10 +101,14 @@ export async function listJobs(): Promise<Job[]> {
 export async function deleteJob(jobId: string): Promise<void> {
   await db.transaction('rw', [db.jobs, db.panels, db.notes, db.materials, db.photos], async () => {
     const panels = await db.panels.where('jobId').equals(jobId).toArray();
-    const photoIds = panels
-      .map((p) => p.sourcePhotoId)
-      .filter((id): id is string => Boolean(id));
-    if (photoIds.length) await db.photos.bulkDelete(photoIds);
+    const photoIds = new Set(
+      panels
+        .map((p) => p.sourcePhotoId)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const jobPhotos = await db.photos.where('jobId').equals(jobId).toArray();
+    for (const photo of jobPhotos) photoIds.add(photo.id);
+    if (photoIds.size) await db.photos.bulkDelete([...photoIds]);
     await db.panels.where('jobId').equals(jobId).delete();
     await db.notes.where('jobId').equals(jobId).delete();
     await db.materials.where('jobId').equals(jobId).delete();
@@ -109,10 +119,24 @@ export async function deleteJob(jobId: string): Promise<void> {
 // ---------- Photos ----------
 
 /** Store a captured image blob; returns the id to pass as sourcePhotoId. */
-export async function addPhoto(blob: Blob): Promise<string> {
+export async function addPhoto(
+  blob: Blob,
+  opts?: { jobId?: string; label?: string },
+): Promise<string> {
   const id = newId();
-  await db.photos.add({ id, blob, createdAt: Date.now() });
+  await db.photos.add({
+    id,
+    blob,
+    jobId: opts?.jobId,
+    label: opts?.label,
+    createdAt: Date.now(),
+  });
   return id;
+}
+
+/** Property-level photos for a job (not necessarily linked to a panel render). */
+export async function getPhotosForJob(jobId: string): Promise<StoredPhoto[]> {
+  return db.photos.where('jobId').equals(jobId).sortBy('createdAt');
 }
 
 /** Fetch a stored photo blob (undefined if missing). */
@@ -123,20 +147,52 @@ export async function getPhoto(photoId: string): Promise<Blob | undefined> {
 
 // ---------- Panels & components ----------
 
+export interface AddPanelOpts {
+  sourcePhotoId?: string;
+  rows?: number;
+  cols?: number;
+  label?: string;
+  sourceDescription?: string;
+  sourceType?: 'photo' | 'description';
+}
+
+export async function addPanel(
+  jobId: string,
+  components: PanelComponent[],
+  opts?: AddPanelOpts,
+): Promise<Panel>;
 export async function addPanel(
   jobId: string,
   components: PanelComponent[],
   sourcePhotoId?: string,
   rows?: number,
   cols?: number,
+): Promise<Panel>;
+export async function addPanel(
+  jobId: string,
+  components: PanelComponent[],
+  sourcePhotoIdOrOpts?: string | AddPanelOpts,
+  rows?: number,
+  cols?: number,
 ): Promise<Panel> {
+  const opts: AddPanelOpts =
+    typeof sourcePhotoIdOrOpts === 'object' && sourcePhotoIdOrOpts != null
+      ? sourcePhotoIdOrOpts
+      : {
+          sourcePhotoId: sourcePhotoIdOrOpts,
+          rows,
+          cols,
+        };
   const panel: Panel = {
     id: newId(),
     jobId,
-    sourcePhotoId,
+    sourcePhotoId: opts.sourcePhotoId,
+    label: opts.label,
+    sourceDescription: opts.sourceDescription,
+    sourceType: opts.sourceType,
     components,
-    rows,
-    cols,
+    rows: opts.rows,
+    cols: opts.cols,
     createdAt: Date.now(),
   };
   await db.panels.add(panel);
@@ -215,6 +271,56 @@ export async function replacePanelComponentsRaw(
     ? components.map((c, i) => ({ ...c, order: i + 1 }))
     : syncComponentGrid(components, rows, cols);
   await db.panels.update(panelId, { rows, cols, components: final });
+}
+
+export interface BoardVoiceNoteDraft {
+  componentId?: string;
+  transcript: string;
+  cleaned: CleanedNote;
+}
+
+/** Atomically persist board-voice layout edits and any new notes. */
+export async function applyBoardVoiceChanges(
+  jobId: string,
+  panelId: string,
+  components: PanelComponent[],
+  layout: { rows: number; cols: number },
+  opts: { preservePositions?: boolean },
+  notes: BoardVoiceNoteDraft[],
+): Promise<void> {
+  await db.transaction("rw", [db.panels, db.notes], async () => {
+    const panel = await db.panels.get(panelId);
+    if (!panel) throw new Error("Panel not found");
+
+    const rows = layout.rows;
+    const cols = layout.cols;
+    let final = opts.preservePositions
+      ? components.map((c, i) => ({ ...c, order: i + 1 }))
+      : syncComponentGrid(components, rows, cols);
+
+    const newNotes: Note[] = [];
+    for (const draft of notes) {
+      const note: Note = {
+        id: newId(),
+        jobId,
+        componentId: draft.componentId,
+        transcript: draft.transcript,
+        cleaned: draft.cleaned,
+        createdAt: Date.now(),
+      };
+      newNotes.push(note);
+      if (draft.componentId) {
+        final = final.map((c) =>
+          c.id === draft.componentId
+            ? { ...c, noteIds: [...c.noteIds, note.id] }
+            : c,
+        );
+      }
+    }
+
+    await db.panels.update(panelId, { rows, cols, components: final });
+    if (newNotes.length) await db.notes.bulkAdd(newNotes);
+  });
 }
 
 /**

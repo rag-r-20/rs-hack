@@ -6,9 +6,11 @@ import {
   getPanelsForJob,
   getNotesForJob,
   getMaterialsForJob,
+  getPhotosForJob,
   updateComponent,
   replacePanelComponents,
   newId,
+  type StoredPhoto,
 } from "../lib/db";
 import { TopBar } from "./TopBar";
 import { Button } from "./ui/Button";
@@ -20,6 +22,7 @@ import { TileEditor } from "./TileEditor";
 import { NotesList } from "./NotesList";
 import { MaterialsList } from "./MaterialsList";
 import { JobSearch } from "./JobSearch";
+import { PropertyImages } from "./PropertyImages";
 
 type Tab = "board" | "notes" | "materials" | "ask";
 
@@ -38,6 +41,7 @@ export function JobView() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [photos, setPhotos] = useState<StoredPhoto[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("board");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -49,15 +53,17 @@ export function JobView() {
       navigate("/", { replace: true });
       return;
     }
-    const [panels, ns, ms] = await Promise.all([
+    const [panels, ns, ms, ps] = await Promise.all([
       getPanelsForJob(jobId),
       getNotesForJob(jobId),
       getMaterialsForJob(jobId),
+      getPhotosForJob(jobId),
     ]);
     setJob(j);
     setPanel(panels.length ? panels[panels.length - 1] : null);
     setNotes(ns);
     setMaterials(ms);
+    setPhotos(ps);
     setLoading(false);
   }, [jobId, navigate]);
 
@@ -66,6 +72,11 @@ export function JobView() {
   }, [refresh]);
 
   const components = panel?.components ?? [];
+  const boardTitle = panel?.label ?? job?.title;
+  const boardCaption =
+    panel?.sourceType === "description" && panel.sourceDescription
+      ? panel.sourceDescription
+      : undefined;
   const selectedTile = useMemo(
     () => components.find((c) => c.id === selectedId) ?? null,
     [components, selectedId],
@@ -186,16 +197,21 @@ export function JobView() {
       </nav>
 
       <main className="flex-1 px-4 py-4">
+        <PropertyImages jobId={jobId} photos={photos} onChanged={refresh} />
+
         {tab === "board" &&
           (panel ? (
             <>
               <ErrorBoundary>
+                {boardCaption && (
+                  <p className="mb-3 text-sm text-zinc-500">{boardCaption}</p>
+                )}
                 <BeforeAfter
                   photoId={panel.sourcePhotoId}
                   components={components}
                   rows={panel.rows}
                   cols={panel.cols}
-                  title={job?.title}
+                  title={boardTitle}
                   selectedId={selectedId}
                   highlightIds={highlightIds ?? undefined}
                   onSelectTile={openTile}
@@ -212,7 +228,10 @@ export function JobView() {
               </ErrorBoundary>
             </>
           ) : (
-            <NoBoard onCapture={() => navigate(`/job/${jobId}/capture`)} />
+            <NoBoard
+              onCapture={() => navigate(`/job/${jobId}/capture`)}
+              onDescribe={() => navigate(`/job/${jobId}/describe`)}
+            />
           ))}
 
         {tab === "notes" && (
@@ -262,7 +281,13 @@ export function JobView() {
   );
 }
 
-function NoBoard({ onCapture }: { onCapture: () => void }) {
+function NoBoard({
+  onCapture,
+  onDescribe,
+}: {
+  onCapture: () => void;
+  onDescribe: () => void;
+}) {
   return (
     <Card className="mt-8 flex flex-col items-center p-8 text-center">
       <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
@@ -282,12 +307,17 @@ function NoBoard({ onCapture }: { onCapture: () => void }) {
       </div>
       <h2 className="text-lg font-semibold text-zinc-900">No board yet</h2>
       <p className="mt-1 max-w-xs text-sm text-zinc-500">
-        Capture a photo of the consumer unit to generate a clean, labeled
-        diagram.
+        Capture a photo or describe the board in plain English to generate a
+        clean, labeled diagram.
       </p>
-      <Button size="lg" className="mt-5" onClick={onCapture}>
-        Capture board
-      </Button>
+      <div className="mt-5 flex w-full max-w-xs flex-col gap-2">
+        <Button size="lg" block onClick={onCapture}>
+          Capture board
+        </Button>
+        <Button size="lg" variant="secondary" block onClick={onDescribe}>
+          Describe board
+        </Button>
+      </div>
     </Card>
   );
 }
