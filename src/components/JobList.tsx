@@ -7,6 +7,7 @@ import {
   deleteJob,
   getPanelsForJob,
   getPhotosForJob,
+  getPhoto,
 } from "../lib/db";
 import { useShell } from "./AppShell";
 import { Card } from "./ui/Card";
@@ -86,9 +87,19 @@ export function JobList() {
           getPhotosForJob(job.id),
         ]);
         const components = panels.flatMap((p) => p.components);
+        // Prefer the captured board scan (linked to the panel via
+        // sourcePhotoId, which is NOT job-scoped), then fall back to a
+        // property photo. This is why boards captured via the camera still
+        // get a thumbnail even when no property image was ever added.
+        let blob: Blob | undefined;
+        for (let i = panels.length - 1; i >= 0 && !blob; i--) {
+          const sourcePhotoId = panels[i].sourcePhotoId;
+          if (sourcePhotoId) blob = await getPhoto(sourcePhotoId);
+        }
+        if (!blob && photos[0]) blob = photos[0].blob;
         let photoUrl: string | null = null;
-        if (photos[0]) {
-          photoUrl = URL.createObjectURL(photos[0].blob);
+        if (blob) {
+          photoUrl = URL.createObjectURL(blob);
           created.push(photoUrl);
         }
         return {
