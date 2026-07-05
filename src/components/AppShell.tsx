@@ -8,6 +8,7 @@ import {
 import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
+import { SyncPanel } from "./SyncPanel";
 
 // ---------- Theme (dark-mode-first, persisted) ----------
 
@@ -57,6 +58,7 @@ export function AppShell({ children }: Props) {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [newJobSignal, setNewJobSignal] = useState(0);
+  const [syncOpen, setSyncOpen] = useState(false);
 
   useEffect(() => {
     applyTheme(theme);
@@ -77,6 +79,11 @@ export function AppShell({ children }: Props) {
     setDrawerOpen(false);
   }, [location.pathname, navigate]);
 
+  const openSync = useCallback(() => {
+    setSyncOpen(true);
+    setDrawerOpen(false);
+  }, []);
+
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
     setDrawerOpen(false);
@@ -95,7 +102,7 @@ export function AppShell({ children }: Props) {
         {/* Desktop persistent sidebar */}
         <aside className="hidden w-60 shrink-0 border-r border-[var(--color-slate-light)] bg-[var(--color-surface-container-low)] md:block">
           <div className="sticky top-0 h-dvh overflow-y-auto rb-scroll">
-            <Sidebar onNewJob={requestNewJob} />
+            <Sidebar onNewJob={requestNewJob} onSync={openSync} />
           </div>
         </aside>
 
@@ -120,6 +127,7 @@ export function AppShell({ children }: Props) {
           >
             <Sidebar
               onNewJob={requestNewJob}
+              onSync={openSync}
               onClose={() => setDrawerOpen(false)}
               showClose
             />
@@ -154,6 +162,8 @@ export function AppShell({ children }: Props) {
           </main>
         </div>
       </div>
+
+      <SyncPanel open={syncOpen} onClose={() => setSyncOpen(false)} />
     </ShellContext.Provider>
   );
 }

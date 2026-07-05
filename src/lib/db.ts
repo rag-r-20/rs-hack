@@ -440,3 +440,186 @@ export async function assembleJobData(jobId: string): Promise<JobData | undefine
   ]);
   return { job, panels, notes, materials };
 }
+
+// ---------- Cross-job queries (global Notes / Materials / Ask AI / History) ----
+
+/** Every note across all jobs, newest first. */
+export async function getAllNotes(): Promise<Note[]> {
+  await ensureDb();
+  return db.notes.orderBy('createdAt').reverse().toArray();
+}
+
+/** Every material across all jobs, newest first. */
+export async function getAllMaterials(): Promise<Material[]> {
+  await ensureDb();
+  return db.materials.orderBy('createdAt').reverse().toArray();
+}
+
+/** Every panel across all jobs, newest first. */
+export async function getAllPanels(): Promise<Panel[]> {
+  await ensureDb();
+  return db.panels.orderBy('createdAt').reverse().toArray();
+}
+
+/** Full data for every job — feeds the global "ask across all jobs" prompt. */
+export async function assembleAllJobsData(): Promise<JobData[]> {
+  await ensureDb();
+  const jobs = await listJobs();
+  const [allPanels, allNotes, allMaterials] = await Promise.all([
+    getAllPanels(),
+    getAllNotes(),
+    getAllMaterials(),
+  ]);
+  return jobs.map((job) => ({
+    job,
+    panels: allPanels.filter((p) => p.jobId === job.id),
+    notes: allNotes.filter((n) => n.jobId === job.id),
+    materials: allMaterials.filter((m) => m.jobId === job.id),
+  }));
+}
+
+/** One entry in the activity timeline (derived from row createdAt values). */
+export interface ActivityEvent {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  kind: 'job' | 'panel' | 'note' | 'material';
+  summary: string;
+  createdAt: number;
+}
+
+/**
+ * A merged, newest-first activity feed across all jobs: job creation, panel
+ * captures, notes recorded, and materials added. Powers the History screen.
+ */
+export async function getActivityFeed(): Promise<ActivityEvent[]> {
+  await ensureDb();
+  const [jobs, panels, notes, materials] = await Promise.all([
+    listJobs(),
+    getAllPanels(),
+    getAllNotes(),
+    getAllMaterials(),
+  ]);
+  const titleOf = new Map(jobs.map((j) => [j.id, j.title]));
+  const events: ActivityEvent[] = [];
+
+  for (const j of jobs) {
+    events.push({
+      id: `job-${j.id}`,
+      jobId: j.id,
+      jobTitle: j.title,
+      kind: 'job',
+      summary: `Job created${j.address ? ` · ${j.address}` : ''}`,
+      createdAt: j.createdAt,
+    });
+  }
+  for (const p of panels) {
+    const live = p.components.filter((c) => c.type !== 'blank').length;
+    events.push({
+      id: `panel-${p.id}`,
+      jobId: p.jobId,
+      jobTitle: titleOf.get(p.jobId) ?? 'Unknown job',
+      kind: 'panel',
+      summary:
+        p.sourceType === 'description'
+          ? `Board described (${live} circuits)`
+          : `Board captured (${live} circuits)`,
+      createdAt: p.createdAt,
+    });
+  }
+  for (const n of notes) {
+    events.push({
+      id: `note-${n.id}`,
+      jobId: n.jobId,
+      jobTitle: titleOf.get(n.jobId) ?? 'Unknown job',
+      kind: 'note',
+      summary: `Note: ${n.cleaned.purpose || n.cleaned.note_text || 'Voice note recorded'}`,
+      createdAt: n.createdAt,
+    });
+  }
+  for (const m of materials) {
+    events.push({
+      id: `material-${m.id}`,
+      jobId: m.jobId,
+      jobTitle: titleOf.get(m.jobId) ?? 'Unknown job',
+      kind: 'material',
+      summary: `Material: ${m.item}`,
+      createdAt: m.createdAt,
+    });
+  }
+
+  return events.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+// ---------- Backup / restore (local "Sync") ----------
+
+export interface BackupData {
+  version: 1;
+  exportedAt: number;
+  jobs: Job[];
+  panels: Panel[];
+  notes: Note[];
+  materials: Material[];
+}
+
+/**
+ * Serialise all job data (not photo blobs) into a portable JSON backup.
+ * Used by the Sync panel to let a tech move data between devices.
+ */
+export async function exportBackup(): Promise<BackupData> {
+  await ensureDb();
+  const [jobs, panels, notes, materials] = await Promise.all([
+    db.jobs.toArray(),
+    db.panels.toArray(),
+    db.notes.toArray(),
+    db.materials.toArray(),
+  ]);
+  return { version: 1, exportedAt: Date.now(), jobs, panels, notes, materials };
+}
+
+function isBackupData(v: unknown): v is BackupData {
+  if (typeof v !== 'object' || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return (
+    o.version === 1 &&
+    Array.isArray(o.jobs) &&
+    Array.isArray(o.panels) &&
+    Array.isArray(o.notes) &&
+    Array.isArray(o.materials)
+  );
+}
+
+export interface RestoreResult {
+  jobs: number;
+  panels: number;
+  notes: number;
+  materials: number;
+}
+
+/**
+ * Restore a backup produced by {@link exportBackup}. Rows are upserted by id
+ * (bulkPut), so importing the same file twice is idempotent and importing a
+ * newer export merges cleanly. Throws on a malformed file.
+ */
+export async function importBackup(raw: unknown): Promise<RestoreResult> {
+  if (!isBackupData(raw)) {
+    throw new Error('Not a valid ReadBack backup file.');
+  }
+  await ensureDb();
+  await db.transaction(
+    'rw',
+    [db.jobs, db.panels, db.notes, db.materials],
+    async () => {
+      await db.jobs.bulkPut(raw.jobs);
+      await db.panels.bulkPut(raw.panels);
+      await db.notes.bulkPut(raw.notes);
+      await db.materials.bulkPut(raw.materials);
+    },
+  );
+  return {
+    jobs: raw.jobs.length,
+    panels: raw.panels.length,
+    notes: raw.notes.length,
+    materials: raw.materials.length,
+  };
+}

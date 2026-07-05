@@ -3,12 +3,14 @@ import { NavLink } from "react-router-dom";
 
 interface Props {
   onNewJob: () => void;
+  /** Open the Sync (backup/restore) modal. */
+  onSync: () => void;
   /** Mobile drawer only: render a close (X) button in the brand row. */
   showClose?: boolean;
   onClose?: () => void;
 }
 
-export function Sidebar({ onNewJob, showClose, onClose }: Props) {
+export function Sidebar({ onNewJob, onSync, showClose, onClose }: Props) {
   return (
     <nav className="flex h-full min-h-dvh flex-col gap-6 px-4 py-5">
       {/* Brand + technician identity */}
@@ -69,16 +71,21 @@ export function Sidebar({ onNewJob, showClose, onClose }: Props) {
       {/* Contextual nav */}
       <div className="flex flex-col gap-1">
         <NavItem to="/" end icon={<BoardGlyph />} label="Board" />
-        <NavItem to="/" icon={<NotesGlyph />} label="Notes" inert />
-        <NavItem to="/" icon={<MaterialsGlyph />} label="Materials" inert />
-        <NavItem to="/" icon={<AiGlyph />} label="Ask AI" inert />
+        <NavItem to="/notes" icon={<NotesGlyph />} label="Notes" />
+        <NavItem to="/materials" icon={<MaterialsGlyph />} label="Materials" />
+        <NavItem to="/ask" icon={<AiGlyph />} label="Ask AI" />
       </div>
 
       <div className="my-1 h-px bg-[var(--color-slate-light)]" />
 
       <div className="flex flex-col gap-1">
-        <StaticItem icon={<HistoryGlyph />} label="History" />
-        <StaticItem icon={<SyncGlyph />} label="Sync" trailing={<SyncDot />} />
+        <NavItem to="/history" icon={<HistoryGlyph />} label="History" />
+        <StaticItem
+          icon={<SyncGlyph />}
+          label="Sync"
+          trailing={<SyncDot />}
+          onClick={onSync}
+        />
       </div>
     </nav>
   );
@@ -120,14 +127,17 @@ function StaticItem({
   icon,
   label,
   trailing,
+  onClick,
 }: {
   icon: ReactNode;
   label: string;
   trailing?: ReactNode;
+  onClick?: () => void;
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className="flex min-h-[48px] items-center gap-3 rounded px-3 py-2 text-body-md text-[var(--color-on-surface-variant)] transition-colors hover:bg-[var(--color-surface-bright)] hover:text-[var(--color-on-surface)]"
     >
       <span className="shrink-0">{icon}</span>
